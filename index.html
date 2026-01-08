@@ -1,0 +1,302 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>CFS – Unit Grouping</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+
+<style>
+:root{
+  --bg:#f5f6f8;
+  --panel:#ffffff;
+  --border:#e5e7eb;
+  --text:#111827;
+  --muted:#6b7280;
+  --danger:#ef4444;
+  --primary:#2563eb;
+}
+
+*{box-sizing:border-box}
+body{
+  margin:0;
+  font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,Arial;
+  background:var(--bg);
+  color:var(--text);
+}
+
+.layout{
+  display:grid;
+  grid-template-columns:1fr 420px;
+  height:100vh;
+}
+
+/* RIGHT PANEL */
+.panel{
+  background:var(--panel);
+  border-left:1px solid var(--border);
+  display:flex;
+  flex-direction:column;
+}
+
+.panel-header{
+  padding:14px 16px;
+  border-bottom:1px solid var(--border);
+}
+
+.tabs{
+  display:flex;
+  gap:18px;
+  font-weight:600;
+}
+
+.tab{
+  color:var(--muted);
+}
+
+.tab.active{
+  color:var(--text);
+  border-bottom:2px solid var(--danger);
+  padding-bottom:6px;
+}
+
+.unit-list{
+  padding:12px;
+  overflow-y:auto;
+  flex:1;
+}
+
+/* UNIT CARD */
+.unit-card{
+  background:#fff;
+  border:1px solid var(--border);
+  border-radius:10px;
+  padding:10px 12px;
+  margin-bottom:8px;
+}
+
+.unit-card.dragging{opacity:.5}
+.unit-card.drop-target{
+  border-color:var(--primary);
+  background:#f0f7ff;
+}
+
+.unit-top{
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+}
+
+.unit-left{
+  display:flex;
+  gap:10px;
+  align-items:center;
+}
+
+.icon{
+  width:30px;
+  height:30px;
+  border-radius:50%;
+  background:var(--primary);
+  color:#fff;
+  display:grid;
+  place-items:center;
+  font-weight:700;
+  font-size:13px;
+}
+
+.unit-name{
+  font-weight:600;
+  font-size:14px;
+}
+
+.unit-meta{
+  font-size:12px;
+  color:var(--muted);
+}
+
+.unit-actions{
+  display:flex;
+  gap:6px;
+  align-items:center;
+}
+
+.status{
+  font-size:11px;
+  padding:3px 8px;
+  border-radius:999px;
+  border:1px solid var(--border);
+}
+
+.btn{
+  font-size:12px;
+  padding:4px 8px;
+  border-radius:8px;
+  border:1px solid var(--border);
+  background:#fff;
+  cursor:pointer;
+  font-weight:600;
+}
+
+.btn-danger{
+  background:var(--danger);
+  color:#fff;
+  border-color:transparent;
+}
+
+/* GROUP */
+.group-children{
+  margin-top:6px;
+  padding-left:16px;
+  border-left:2px solid #f1f2f4;
+}
+
+.sub{
+  transform:scale(.96);
+  transform-origin:top left;
+}
+</style>
+</head>
+
+<body>
+<div class="layout">
+  <!-- LEFT SIDE EMPTY (matches your app layout) -->
+  <div></div>
+
+  <!-- RIGHT SIDE -->
+  <aside class="panel">
+    <div class="panel-header">
+      <div class="tabs">
+        <div class="tab">Available</div>
+        <div class="tab active">Assigned</div>
+      </div>
+    </div>
+
+    <div class="unit-list" id="units"></div>
+  </aside>
+</div>
+
+<script>
+/* DATA */
+const units = [
+  {id:'AMB0123', role:'Ambulance'},
+  {id:'45B2', role:'Ambulance'},
+  {id:'45B3', role:'Ambulance'},
+  {id:'p6', role:'Patrol'},
+  {id:'p12', role:'Patrol'},
+  {id:'isad', role:'FRM'},
+  {id:'FAST7', role:'FAST'},
+  {id:'ENG2', role:'Engine'},
+  {id:'CAR9', role:'Patrol'}
+];
+
+let groups = {};            // parentId -> [childIds]
+let expandedGroups = {};    // parentId -> true/false
+let dragging = null;
+
+/* HELPERS */
+const isChild = id =>
+  Object.values(groups).some(arr => arr.includes(id));
+
+const parentOf = id =>
+  Object.keys(groups).find(p => groups[p].includes(id));
+
+/* RENDER */
+function render(){
+  const root = document.getElementById('units');
+  root.innerHTML = '';
+
+  units.forEach(u=>{
+    if(isChild(u.id)) return;
+
+    const card = unitCard(u);
+    root.appendChild(card);
+
+    if(groups[u.id] && expandedGroups[u.id]){
+      const wrap = document.createElement('div');
+      wrap.className = 'group-children';
+
+      groups[u.id].forEach(cid=>{
+        const child = units.find(x=>x.id===cid);
+        const sub = unitCard(child,true);
+        sub.classList.add('sub');
+        wrap.appendChild(sub);
+      });
+
+      root.appendChild(wrap);
+    }
+  });
+}
+
+/* CARD */
+function unitCard(unit,isSub=false){
+  const card = document.createElement('div');
+  card.className = 'unit-card';
+  card.draggable = true;
+
+  card.ondragstart = ()=> dragging = unit.id;
+  card.ondragend = ()=> dragging = null;
+
+  card.ondragover = e=>{
+    if(dragging && dragging!==unit.id){
+      e.preventDefault();
+      card.classList.add('drop-target');
+    }
+  };
+
+  card.ondragleave = ()=> card.classList.remove('drop-target');
+
+  card.ondrop = ()=>{
+    card.classList.remove('drop-target');
+    if(!dragging || dragging===unit.id) return;
+
+    const oldParent = parentOf(dragging);
+    if(oldParent){
+      groups[oldParent] = groups[oldParent].filter(x=>x!==dragging);
+      if(groups[oldParent].length===0) delete groups[oldParent];
+    }
+
+    groups[unit.id] ??= [];
+    groups[unit.id].push(dragging);
+    expandedGroups[unit.id] = false;
+    dragging = null;
+    render();
+  };
+
+  if(groups[unit.id]){
+    card.style.cursor = 'pointer';
+    card.onclick = e=>{
+      if(e.target.closest('button')) return;
+      expandedGroups[unit.id] = !expandedGroups[unit.id];
+      render();
+    };
+  }
+
+  card.innerHTML = `
+    <div class="unit-top">
+      <div class="unit-left">
+        <div class="icon">${unit.id[0]}</div>
+        <div>
+          <div class="unit-name">${unit.id}</div>
+          <div class="unit-meta">${unit.role}</div>
+        </div>
+      </div>
+      <div class="unit-actions">
+        <span class="status">Assigned</span>
+        ${groups[unit.id] ? `<button class="btn btn-danger" onclick="ungroup('${unit.id}')">Ungroup</button>` : ''}
+      </div>
+    </div>
+  `;
+  return card;
+}
+
+/* UNGROUP */
+function ungroup(id){
+  delete groups[id];
+  delete expandedGroups[id];
+  render();
+}
+
+render();
+</script>
+</body>
+</html>
